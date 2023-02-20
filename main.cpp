@@ -15,34 +15,32 @@
 #define SCALE_FACTOR 1.05
 
 const GLchar* vertexCode = R"glsl(
-    #version 450 core
-
-    precise in dvec2 pos;
-    precise uniform dmat4 transformMat;
-    precise out dvec2 point;
+    #version 140
+    in vec2 pos;
+    uniform mat4 transformMat;
+    out vec2 point;
 
     void main() {
         point = pos.xy;
-        precise dvec4 p = transformMat * dvec4(pos.xy, 0, 0);
-        gl_Position = vec4(float(p.x), float(p.y), float(p.z), float(p.w));
+        gl_Position = transformMat * vec4(pos.xy, 0, 1);
     })glsl";
 
 const GLchar* fragmentCode = R"glsl(
-    #version 450 core
+    #version 140
 
-    #define LIMIT 200
+    #define LIMIT 500
 
     out vec4 outColor;
-    precise flat in dvec2 point;
+    in vec2 point;
 
     void main() {
-        precise dvec2 c = point;
-        precise dvec2 zn = dvec2(0.0, 0.0);
+        vec2 c = point;
+        vec2 zn = vec2(0.0, 0.0);
         int iter = 0;
-        
+
         while (iter <= LIMIT) {
 
-            precise double temp = zn.x;
+            float temp = zn.x;
             zn.x = (zn.x - zn.y) * (zn.x + zn.y) + c.x;
             zn.y = 2.0*temp*zn.y + c.y;
 
@@ -55,15 +53,15 @@ const GLchar* fragmentCode = R"glsl(
             }
             ++iter;
         }
-    })glsl";
+    })glsl"; // length || sqrt(point.x*point.x + point.y*point.y);
 
     // x is real part and y is imaginary part
 
-const GLdouble vertices[] = {
-    -2.0, -2.0,
-    -2.0, 2.0,
-    2.0,  -2.0,
-    2.0,  2.0
+const GLfloat vertices[] = {
+    -2.0f, -2.0f,
+    -2.0f, 2.0f,
+    2.0f,  -2.0f,
+    2.0f,  2.0f
 };
 
 GLuint createBuffer(GLenum type, const void * data, size_t size) {
@@ -90,11 +88,8 @@ GLint compileShader(const bool isVertex) {
     GLint isShaderCompiled = GL_FALSE;
     glGetShaderiv(shader, GL_COMPILE_STATUS, &isShaderCompiled);
     if (isShaderCompiled != GL_TRUE) {
-        std::cerr << "Unable to compile shader, shader id: " << shader << std::endl;
-        GLsizei logLength;
-		GLchar log[1024];
-        glGetShaderInfoLog(shader, sizeof(log), &logLength, log);
-        std::cerr << log << std::endl;
+        std::cerr << "Unable to compile shader" << std::endl;
+        std::cerr << shader << std::endl;
         abort();
     }
     return shader;
@@ -110,59 +105,59 @@ void draw(SDL_Window* window) {
 glm::mat4 getTransformationMatrix(int window_width, int window_height) {
     if (window_width < window_height) {
         // scale by X
-        return glm::scale(glm::dmat4(1.0),
-            glm::dvec3(((double) window_height / window_width), 1.0, 1.0));
+        return glm::scale(glm::mat4(1.0f),
+            glm::vec3(((float) window_height / window_width), 1.0f, 1.0f));
     } else {
         // scale by Y
-        return glm::scale(glm::dmat4(1.0),
-            glm::dvec3(1.0, ((double) window_width / window_height), 1.0));
+        return glm::scale(glm::mat4(1.0f),
+            glm::vec3(1.0f, ((float) window_width / window_height), 1.0f));
     }
 }
 
-void updateCursorCoords(double& xGL, double& yGL, int width, int height) {
+void updateCursorCoords(float& xGL, float& yGL, int width, int height) {
     int xCursor, yCursor;
     SDL_GetMouseState(&xCursor, &yCursor);
     xGL = (2.0*xCursor/width)-1.0;
     yGL = 1.0-(2.0*yCursor)/height;
 }
 
-void updateZoomMatrix(SDL_Window * window, glm::dmat4& zoomMat, bool out) {
-    double xGL, yGL;
+void updateZoomMatrix(SDL_Window * window, glm::mat4& zoomMat, bool out) {
+    float xGL, yGL;
     int window_width, window_height;
     SDL_GetWindowSize(window, &window_width, &window_height);
     updateCursorCoords(xGL, yGL, window_width, window_height);
-    double scaleFactor = SCALE_FACTOR;
+    float scaleFactor = SCALE_FACTOR;
     if (out) {
         scaleFactor = 1.0 / SCALE_FACTOR;
     }
     
     // Translate -> scale -> reverse translate
-    glm::dmat4 applyMat(1.0);
-    applyMat = glm::translate(applyMat, glm::dvec3(xGL, yGL, 0.0));
-    applyMat = glm::scale(applyMat, glm::dvec3(scaleFactor, scaleFactor, 1.0));
-    applyMat = glm::translate(applyMat, glm::dvec3(-xGL, -yGL, 0.0));
+    glm::mat4 applyMat(1.0f);
+    applyMat = glm::translate(applyMat, glm::vec3(xGL, yGL, 0.0f));
+    applyMat = glm::scale(applyMat, glm::vec3(scaleFactor, scaleFactor, 1.0f));
+    applyMat = glm::translate(applyMat, glm::vec3(-xGL, -yGL, 0.0f));
     zoomMat = applyMat * zoomMat;
 }
 
-void setMatrix(GLint glProgram, const glm::dmat4& transformMat) {
+void setMatrix(GLint glProgram, const glm::mat4& transformMat) {
     GLuint MatrixId = glGetUniformLocation(glProgram, MATRIX);
-    glUniformMatrix4dv(MatrixId, 1, GL_FALSE, &transformMat[0][0]);
+    glUniformMatrix4fv(MatrixId, 1, GL_FALSE, &transformMat[0][0]);
     std::cout << transformMat << std::endl;
 }
 
 int main() {
     // Set OpenGL Version
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 4);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 1);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
 
     bool exit = false;
     bool moveModeOn = false;
     int window_width, window_height;
-    glm::dmat4 resizeMat(1.0);
-    glm::dmat4 zoomMat(1.0);
+    glm::mat4 resizeMat(1.0f);
+    glm::mat4 zoomMat(1.0f);
     SDL_Event event;
-    double xGL, yGL;
+    float xGL, yGL;
     
     // Create SDL window and context
     if (SDL_Init(SDL_INIT_VIDEO) < 0) {
@@ -210,7 +205,7 @@ int main() {
 
     // Set the cordinates
     GLint vertexPos = glGetAttribLocation(glProgram, POSITION);
-    glVertexAttribLPointer(vertexPos, 2, GL_DOUBLE, 0, 0);
+    glVertexAttribPointer(vertexPos, 2, GL_FLOAT, GL_FALSE, 0, 0);
     glEnableVertexAttribArray(vertexPos);
     draw(window);
 
@@ -219,7 +214,7 @@ int main() {
             switch (event.type) {
                 case SDL_WINDOWEVENT: {
                     if (event.window.event == SDL_WINDOWEVENT_RESIZED) {
-                        glm::dmat4 tempMat(1.0);
+                        glm::mat4 tempMat(1.0f);
                         SDL_GetWindowSize(window, &window_width, &window_height);
                         resizeMat = getTransformationMatrix(window_width, window_height);
                         tempMat *= zoomMat;
@@ -239,7 +234,7 @@ int main() {
                         // Zoom out
                         updateZoomMatrix(window, zoomMat, true);
                     }
-                    glm::dmat4 tempMat(1.0);
+                    glm::mat4 tempMat(1.0f);
                     tempMat *= zoomMat;
                     tempMat *= resizeMat;
                     setMatrix(glProgram, tempMat);
@@ -248,15 +243,18 @@ int main() {
                 }
                 case SDL_MOUSEMOTION: {
                     // TODO move image
-                    double xDiff = xGL;
-                    double yDiff = yGL;
+                    float xDiff = xGL;
+                    float yDiff = yGL;
                     SDL_GetWindowSize(window, &window_width, &window_height);
                     updateCursorCoords(xGL, yGL, window_width, window_height);
                     xDiff = xGL - xDiff;
                     yDiff = yGL - yDiff;
+                    //std::cout << "a" << std::endl;
                     if (moveModeOn && (xDiff != 0 || yDiff != 0)) {
-                        glm::dmat4 tempMat(1.0);
-                        zoomMat = glm::translate(glm::dmat4(1.0), glm::dvec3(xDiff, yDiff, 0.0)) * zoomMat;
+                        std::cout << "x diff: " << xDiff << std::endl;
+                        std::cout << "y diff: " << yDiff << std::endl;
+                        glm::mat4 tempMat(1.0f);
+                        zoomMat = glm::translate(glm::mat4(1.0f), glm::vec3(xDiff, yDiff, 0.0f)) * zoomMat;
                         tempMat *= zoomMat;
                         tempMat *= resizeMat;
                         setMatrix(glProgram, tempMat);
@@ -269,10 +267,12 @@ int main() {
                     std::cout << "move mode on" << std::endl;
                     SDL_GetWindowSize(window, &window_width, &window_height);
                     updateCursorCoords(xGL, yGL, window_width, window_height);
+                    std::cout << "curr x cord: " << xGL << std::endl;
+                    std::cout << "curr y cord: " << yGL << std::endl;
                     break;
                 case SDL_MOUSEBUTTONUP:
-                    moveModeOn = false;
                     std::cout << "move mode off" << std::endl;
+                    moveModeOn = false;
                     SDL_GetWindowSize(window, &window_width, &window_height);
                     updateCursorCoords(xGL, yGL, window_width, window_height);
                     break;
