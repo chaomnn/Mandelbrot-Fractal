@@ -1,1 +1,8 @@
-To change the colors of the fractal, replace the default colors in colors.txt file with 16 RGB colors of your own choosing.
+Features:
+
+For zooming in/out, use mouse wheel; Press z to reset zoom to default.
+
+To move around the fractal, hold down left mouse button.
+
+To change the colors of the fractal, press 1, 2, or 3. To enter or exit gradient mode, 
+when colors are changing constantly, press c. Press r to reset colors to default.
