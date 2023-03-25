@@ -14,6 +14,8 @@
 #define MATRIX "transformMat"
 #define MATRIX_ZOOM "zoomMat"
 #define BASE_COLOR "baseColor"
+#define IS_JULIA "julia"
+#define CNST "constNum"
 #define SCALE_FACTOR 1.05
 #define CLRS_NUM 16
 
@@ -29,7 +31,12 @@ const GLfloat vertices[] = {
     1.0f,  1.0f
 };
 
-const glm::vec3 baseColor(3.4, 3.9, 5.0);
+const glm::dmat4 defaultZoom = glm::scale(glm::dmat4(1.0),
+    glm::dvec3(0.4, 0.4, 1.0));
+
+const glm::vec3 defaultColor(3.4, 3.9, 5.0);
+
+const glm::dvec2 m = glm::dvec2(0, 0);
 
 static GLuint createBuffer(GLenum type, const void *data, size_t size) {
     GLuint buffer;
@@ -77,13 +84,14 @@ class Surface {
     int window_height;
     Uint32 timerEventType;
     glm::mat4 resizeMat;
-    glm::dmat4 zoomMat = glm::dmat4(1.0);
-    glm::vec3 clr = baseColor;
+    glm::dmat4 zoomMat = defaultZoom;
+    glm::vec3 clr = defaultColor;
+    glm::dvec2 j = glm::dvec2(0.273, 0.005);
 
 public:
     Surface(Uint32 timerEventType) {
         // Create SDL window and context
-        timerEventType = timerEventType;
+        this->timerEventType = timerEventType;
         window = SDL_CreateWindow(TITLE,
             SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
             DEFAULT_WIDTH, DEFAULT_HEIGHT, SDL_WINDOW_RESIZABLE | SDL_WINDOW_OPENGL);
@@ -118,6 +126,8 @@ public:
         glEnableVertexAttribArray(vertexPos);
 
         // Resize image
+        glUniform1i(glGetUniformLocation(glProgram, IS_JULIA), false);
+        glUniform2dv(glGetUniformLocation(glProgram, CNST), 1, &m[0]);
         resizeMat = getTransformationMatrix();
         glViewport(0, 0, window_width, window_height);
         setResizeMatrix(resizeMat);
@@ -166,9 +176,9 @@ public:
         int xCursor, yCursor;
         SDL_GetMouseState(&xCursor, &yCursor);
         bool diff = window_width < window_height;
-        xGL = (2.0*xCursor/window_width)-1.0 *
+        xGL = ((2.0 * xCursor/window_width) - 1.0) *
             (diff ? (float) window_width / (float) window_height : 1);
-        yGL = 1.0-(2.0*yCursor)/window_height *
+        yGL = (1.0 - (2.0 * yCursor)/window_height) *
             (diff ? 1 : (float) window_height / (float) window_width);
     }
 
@@ -201,12 +211,22 @@ public:
         }
     }
 
+    void setJuliaConst(double& xGL, double& yGL) {
+        updateCursorCoords(xGL, yGL);
+        glm::dvec4 temp = glm::inverse(zoomMat) * glm::dvec4(xGL, yGL, 0, 1);
+        j = glm::dvec2(temp.x, temp.y);
+        std::cout << "Julia set const: " << j << std::endl;
+        glUniform2dv(glGetUniformLocation(glProgram, CNST), 1, &j[0]);
+        draw();
+    }
+
     void mainLoop();
 };
 
 void Surface::mainLoop() {
     SDL_Event event;
-    bool moveModeOn = false, switchColors = false, exit = false;
+    bool moveModeOn = false, switchColors = false, exit = false, juliaMode = false,
+        juliaMoveOn = false;
     double xGL, yGL;
     SDL_TimerID timerID;
     while (!exit) {
@@ -218,10 +238,16 @@ void Surface::mainLoop() {
                         glViewport(0, 0, window_width, window_height);
                         setResizeMatrix(resizeMat);
                         draw();
+                    } else if (event.window.event == SDL_WINDOWEVENT_EXPOSED) {
+                        draw();
                     }
                     break;
                 }
                 case SDL_MOUSEWHEEL: {
+                    if (SDL_GetTicks() - 10 > event.wheel.timestamp) {
+                        // Only zoom while the mouse wheel is moving
+                        break;
+                    }
                     if (event.wheel.y > 0) {
                         // Zoom in
                         updateZoomMatrix(zoomMat, false);
@@ -241,52 +267,83 @@ void Surface::mainLoop() {
                     updateCursorCoords(xGL, yGL);
                     xDiff = xGL - xDiff;
                     yDiff = yGL - yDiff;
-                    if (moveModeOn && (xDiff != 0 || yDiff != 0)) {
-                        zoomMat = glm::translate(glm::dmat4(1.0),
-                            glm::dvec3(xDiff, yDiff, 0.0f)) * zoomMat;
-                        setZoomMatrix(zoomMat);
-                        draw();
+                    if (xDiff != 0 || yDiff != 0) {
+                        if (moveModeOn) {
+                            zoomMat = glm::translate(glm::dmat4(1.0),
+                                glm::dvec3(xDiff, yDiff, 0.0f)) * zoomMat;
+                            setZoomMatrix(zoomMat);
+                            draw();
+                        } else if (juliaMode && juliaMoveOn) {
+                            setJuliaConst(xGL, yGL);
+                        }
                     }
                     break;
                 }
                 case SDL_MOUSEBUTTONDOWN:
-                    moveModeOn = true;
                     updateCursorCoords(xGL, yGL);
+                    if (event.button.button == SDL_BUTTON_LEFT) {
+                        moveModeOn = true;
+                    } else if (event.button.button == SDL_BUTTON_RIGHT && juliaMode) {
+                        juliaMoveOn = true;
+                        setJuliaConst(xGL, yGL);
+                    }
                     break;
                 case SDL_MOUSEBUTTONUP:
-                    moveModeOn = false;
                     updateCursorCoords(xGL, yGL);
+                    if (event.button.button == SDL_BUTTON_LEFT) {
+                        moveModeOn = false;
+                    }  else if (event.button.button == SDL_BUTTON_RIGHT && juliaMode) {
+                        juliaMoveOn = false;
+                    }
                     break;
                 case SDL_QUIT:
                     exit = true;
                     break;
                 case SDL_KEYDOWN: {
-                    // Colors changing
                     auto key = event.key.keysym.sym;
-                    if (key == SDLK_c) {
-                        switchColors = !switchColors;
-                        if (switchColors) {
-                            timerID = SDL_AddTimer(100, callback, &timerEventType);
-                        } else {
-                            SDL_RemoveTimer(timerID);
-                        }
-                    } else if (key == SDLK_r) {
-                        if (switchColors) {
-                            SDL_RemoveTimer(timerID);
-                            switchColors = false;
-                        }
-                        clr = baseColor;
-                        setColor(clr);
-                        draw();
-                    } else if (key == SDLK_1 || key == SDLK_2 || key == SDLK_3) {
-                        clr += glm::vec3(key == SDLK_1 ? 0.05 : 0.00, key == SDLK_2 ? 0.05 : 0.00, 
-                            key == SDLK_3 ? 0.05 : 0.00);
-                        setColor(clr);
-                        draw();
-                    } else if (key == SDLK_z) {
-                        zoomMat = glm::dmat4(1.0);
-                        setZoomMatrix(zoomMat);
-                        draw();
+                    switch (key) {
+                        case SDLK_c:
+                            // Enter gradient mode
+                            switchColors = !switchColors;
+                            if (switchColors) {
+                                timerID = SDL_AddTimer(100, callback, &timerEventType);
+                            } else {
+                                SDL_RemoveTimer(timerID);
+                            }
+                            break;
+                        case SDLK_r:
+                            // Reset color
+                            if (switchColors) {
+                                SDL_RemoveTimer(timerID);
+                                switchColors = false;
+                            }
+                            clr = defaultColor;
+                            setColor(clr);
+                            draw();
+                            break;
+                        case SDLK_z:
+                            // Reset zoom
+                            zoomMat = defaultZoom;
+                            setZoomMatrix(zoomMat);
+                            draw();
+                            break;
+                        case SDLK_j:
+                            // Switch to Julia set mode
+                            juliaMode = !juliaMode;
+                            glUniform1i(glGetUniformLocation(glProgram, IS_JULIA), juliaMode);
+                            glUniform2dv(glGetUniformLocation(glProgram, CNST), 1, juliaMode ?
+                                &j[0] : &m[0]);
+                            draw();
+                            break;
+                        default:
+                            // Toggle color params
+                            if (key == SDLK_1 || key == SDLK_2 || key == SDLK_3) {
+                                clr += glm::vec3(key == SDLK_1 ? 0.05 : 0.00, key ==
+                                    SDLK_2 ? 0.05 : 0.00, key == SDLK_3 ? 0.05 : 0.00);
+                                setColor(clr);
+                                draw();
+                            }
+                            break;
                     }
                     break;
                 }

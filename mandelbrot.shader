@@ -1,12 +1,13 @@
 #version 450 core
 
 #define LIMIT 1000
-#define CLRS_NUM 16
 
 out vec4 outColor;
 in vec2 point;
 uniform dmat4 zoomMat;
 uniform vec3 baseColor;
+uniform bool julia;
+uniform dvec2 constNum;
 
 vec3 getColorSin(float iter, vec3 base) {
     iter *= 0.15;
@@ -16,17 +17,27 @@ vec3 getColorSin(float iter, vec3 base) {
 void main() {
     dvec4 c = dvec4(double(point.x), double(point.y), 0, 1);
     c = zoomMat * c;
-    dvec2 zn = dvec2(0.0, 0.0);
+    dvec4 zn = dvec4(constNum.x, constNum.y, 0, 0);
     int iter = 0;
 
+    // For Julia set mode, switch c and zn
+
+    if (julia) {
+        dvec4 temp = zn;
+        zn = c;
+        c = temp;
+    }
+
     // Cardioid/period-2 bulb check
-    
-    double m = c.x - 0.25;
-    double ySqr = c.y * c.y;
-    double q = m * m + ySqr;
-    if (q * (q + m) <= ySqr / 4 || (c.x + 1)*(c.x + 1) + ySqr <= 0.0625) {
-        outColor = vec4(0, 0, 0, 1);
-        return;
+
+    if (!julia) {
+        double m = c.x - 0.25;
+        double ySqr = c.y * c.y;
+        double q = m * m + ySqr;
+        if (q * (q + m) <= ySqr / 4 || (c.x + 1)*(c.x + 1) + ySqr <= 0.0625) {
+            outColor = vec4(0, 0, 0, 1);
+            return;
+        }
     }
 
     while (iter <= LIMIT) {

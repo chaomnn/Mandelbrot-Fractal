@@ -1,3 +1,5 @@
 *.o
 mandelbrot
 .vscode/
+.cache/
+compile_commands.json
